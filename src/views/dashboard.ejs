@@ -1,0 +1,167 @@
+<!-- Stats -->
+<div class="stats-grid" id="statsGrid">
+  <div class="stat-card">
+    <div class="stat-label">Total Jobs</div>
+    <div class="stat-value" id="statTotal">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Running</div>
+    <div class="stat-value" id="statRunning" style="color: var(--warning)">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Completed</div>
+    <div class="stat-value" id="statCompleted" style="color: var(--success)">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Failed</div>
+    <div class="stat-value" id="statFailed" style="color: var(--danger)">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Products Scraped</div>
+    <div class="stat-value" id="statProducts" style="color: var(--primary)">—</div>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom: 16px;">
+  <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+    <input type="text" class="form-control" id="searchInput" placeholder="Search by URL or domain..." style="max-width: 300px;">
+    <select class="form-control" id="statusFilter" style="max-width: 160px;">
+      <option value="all">All Statuses</option>
+      <option value="pending">Pending</option>
+      <option value="detecting">Detecting</option>
+      <option value="scraping">Scraping</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <button class="btn btn-sm" onclick="loadJobs()">Filter</button>
+  </div>
+</div>
+
+<!-- Jobs Table -->
+<div class="card">
+  <div class="card-header">
+    <h2>Scraping Jobs</h2>
+    <button class="btn btn-sm btn-primary" onclick="openNewJobModal()">+ New Job</button>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>URL</th>
+          <th>Type</th>
+          <th>Strategy</th>
+          <th>Status</th>
+          <th>Progress</th>
+          <th>Products</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="jobsTableBody">
+        <tr><td colspan="9" class="empty-state">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<script>
+  let currentPage = 1;
+
+  async function loadStats() {
+    try {
+      const res = await fetch('/api/jobs/stats');
+      const s = await res.json();
+      document.getElementById('statTotal').textContent = s.total;
+      document.getElementById('statRunning').textContent = s.running;
+      document.getElementById('statCompleted').textContent = s.completed;
+      document.getElementById('statFailed').textContent = s.failed;
+      document.getElementById('statProducts').textContent = s.totalProducts;
+    } catch {}
+  }
+
+  async function loadJobs(page = 1) {
+    currentPage = page;
+    const search = document.getElementById('searchInput').value;
+    const status = document.getElementById('statusFilter').value;
+    const params = new URLSearchParams({ page, limit: 20, status });
+    if (search) params.set('search', search);
+
+    try {
+      const res = await fetch(`/api/jobs?${params}`);
+      const data = await res.json();
+      renderJobs(data.jobs);
+      renderPagination(data.page, data.totalPages, data.total);
+    } catch {
+      document.getElementById('jobsTableBody').innerHTML = '<tr><td colspan="9" class="empty-state">Failed to load jobs</td></tr>';
+    }
+  }
+
+  function renderJobs(jobs) {
+    const tbody = document.getElementById('jobsTableBody');
+    if (!jobs.length) {
+      tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><h3>No jobs found</h3><p>Create your first scraping job to get started.</p></div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = jobs.map(j => `
+      <tr style="cursor: pointer;" onclick="window.location='/jobs/${j.id}'">
+        <td>#${j.id}</td>
+        <td><div class="truncate" title="${j.url}">${j.domain}</div></td>
+        <td>${j.site_type ? `<span class="badge badge-${j.site_type}">${j.site_type}</span>` : '—'}</td>
+        <td>${j.strategy_used ? `<span class="badge badge-${j.strategy_used}">${j.strategy_used}</span>` : '—'}</td>
+        <td><span class="badge badge-${j.status}">${j.status}</span></td>
+        <td style="min-width: 100px;">
+          <div class="progress" title="${j.progress}%">
+            <div class="progress-bar ${j.status === 'completed' ? 'completed' : j.status === 'failed' ? 'failed' : ''}" style="width: ${j.progress}%"></div>
+          </div>
+        </td>
+        <td>${j.stats?.productsFound ?? 0}</td>
+        <td style="white-space: nowrap;">${timeAgo(j.created_at)}</td>
+        <td>
+          <div class="btn-group" onclick="event.stopPropagation()">
+            <a href="/jobs/${j.id}" class="btn btn-sm">View</a>
+            ${['pending','detecting','scraping'].includes(j.status) ? `<button class="btn btn-sm btn-danger" onclick="cancelJob(${j.id})">Cancel</button>` : ''}
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderPagination(page, totalPages, total) {
+    const el = document.getElementById('pagination');
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    let html = `<span class="pagination-info">${total} total</span>`;
+    if (page > 1) html += `<button class="btn btn-sm" onclick="loadJobs(${page - 1})">←</button>`;
+    for (let i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) {
+      html += `<button class="btn btn-sm ${i === page ? 'active' : ''}" onclick="loadJobs(${i})">${i}</button>`;
+    }
+    if (page < totalPages) html += `<button class="btn btn-sm" onclick="loadJobs(${page + 1})">→</button>`;
+    el.innerHTML = html;
+  }
+
+  async function cancelJob(id) {
+    if (!confirm('Cancel this job?')) return;
+    await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
+    loadJobs(currentPage);
+    loadStats();
+    showToast('Job cancelled');
+  }
+
+  // Real-time updates on the jobs list
+  socket.on('jobs:updated', () => {
+    loadJobs(currentPage);
+    loadStats();
+  });
+
+  // Search on Enter
+  document.getElementById('searchInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') loadJobs();
+  });
+
+  // Initial load
+  loadStats();
+  loadJobs();
+</script>

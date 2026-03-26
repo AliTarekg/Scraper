@@ -1,0 +1,458 @@
+<!-- Job Header -->
+<div class="card" style="margin-bottom: 16px;">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+    <div>
+      <h2 style="font-size: 18px; margin-bottom: 8px;">
+        Job #<%= job.id %>
+        <span class="badge badge-<%= job.status %>" id="jobStatus"><%= job.status %></span>
+        <% if (job.siteType) { %><span class="badge badge-<%= job.siteType %>" id="jobSiteType"><%= job.siteType %></span><% } %>
+        <% if (job.strategyUsed) { %><span class="badge badge-<%= job.strategyUsed %>" id="jobStrategy"><%= job.strategyUsed %></span><% } %>
+      </h2>
+      <a href="<%= job.url %>" target="_blank" style="font-size: 13px; word-break: break-all;"><%= job.url %></a>
+    </div>
+    <div class="btn-group">
+      <% if (['pending','detecting','scraping'].includes(job.status)) { %>
+        <button class="btn btn-sm btn-danger" onclick="cancelJob(<%= job.id %>)">Cancel</button>
+      <% } %>
+      <% if (['completed','failed','cancelled'].includes(job.status)) { %>
+        <button class="btn btn-sm" onclick="rerunJob(<%= job.id %>)">↻ Re-run</button>
+      <% } %>
+      <button class="btn btn-sm btn-danger" onclick="deleteJob(<%= job.id %>)">🗑 Delete</button>
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div style="margin-top: 16px;">
+    <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); margin-bottom: 4px;">
+      <span id="progressLabel">Progress: <%= job.progress %>%</span>
+      <span id="progressUrl"></span>
+    </div>
+    <div class="progress" style="height: 8px;">
+      <div class="progress-bar <%= job.status === 'completed' ? 'completed' : job.status === 'failed' ? 'failed' : '' %>" id="progressBar" style="width: <%= job.progress %>%"></div>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="stats-grid" style="margin-top: 16px; margin-bottom: 0;">
+    <div class="stat-card">
+      <div class="stat-label">Pages Crawled</div>
+      <div class="stat-value" id="statPages"><%= job.stats?.pagesCrawled ?? 0 %></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Products Found</div>
+      <div class="stat-value" id="statProducts" style="color: var(--primary)"><%= job.stats?.productsFound ?? 0 %></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Errors</div>
+      <div class="stat-value" id="statErrors" style="color: var(--danger)"><%= job.stats?.errors ?? 0 %></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Duration</div>
+      <div class="stat-value" id="statDuration" style="font-size: 18px;"><%= job.startedAt ? '...' : '—' %></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="card">
+  <div class="tabs">
+    <div class="tab active" data-tab="products" onclick="switchTab('products')">Products</div>
+    <div class="tab" data-tab="pages" onclick="switchTab('pages')">Pages</div>
+    <div class="tab" data-tab="logs" onclick="switchTab('logs')">Logs</div>
+    <div class="tab" data-tab="export" onclick="switchTab('export')">Export</div>
+  </div>
+
+  <!-- Products Tab -->
+  <div class="tab-content active" id="tab-products">
+    <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; align-items: center;">
+      <input type="text" class="form-control" id="productSearch" placeholder="Search products..." style="max-width: 250px;">
+      <input type="number" class="form-control" id="productMinPrice" placeholder="Min price" style="max-width: 120px;">
+      <input type="number" class="form-control" id="productMaxPrice" placeholder="Max price" style="max-width: 120px;">
+      <button class="btn btn-sm" onclick="loadProducts()">Filter</button>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Image</th>
+            <th>Name</th>
+            <th>Price</th>
+            <th>Currency</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody id="productsTableBody">
+          <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="productsPagination"></div>
+  </div>
+
+  <!-- Pages Tab -->
+  <div class="tab-content" id="tab-pages">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>URL</th>
+            <th>Status</th>
+            <th>Product?</th>
+            <th>Score</th>
+            <th>Depth</th>
+          </tr>
+        </thead>
+        <tbody id="pagesTableBody">
+          <tr><td colspan="5" class="empty-state">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagesPagination"></div>
+  </div>
+
+  <!-- Logs Tab -->
+  <div class="tab-content" id="tab-logs">
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+      <select class="form-control" id="logLevelFilter" style="max-width: 140px;" onchange="loadLogs()">
+        <option value="all">All Levels</option>
+        <option value="info">Info</option>
+        <option value="warn">Warning</option>
+        <option value="error">Error</option>
+        <option value="debug">Debug</option>
+      </select>
+    </div>
+    <div class="log-viewer" id="logViewer"></div>
+  </div>
+
+  <!-- Export Tab -->
+  <div class="tab-content" id="tab-export">
+    <h3 style="font-size: 14px; margin-bottom: 16px;">Export Products</h3>
+    <div class="form-row" style="margin-bottom: 16px;">
+      <div class="form-group">
+        <label>Format</label>
+        <select class="form-control" id="exportFormat">
+          <option value="csv">CSV</option>
+          <option value="excel">Excel (.xlsx)</option>
+          <option value="json">JSON</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Search Filter</label>
+        <input type="text" class="form-control" id="exportSearch" placeholder="Filter by name...">
+      </div>
+      <div class="form-group">
+        <label>Min Price</label>
+        <input type="number" class="form-control" id="exportMinPrice" placeholder="0">
+      </div>
+      <div class="form-group">
+        <label>Max Price</label>
+        <input type="number" class="form-control" id="exportMaxPrice" placeholder="∞">
+      </div>
+    </div>
+    <button class="btn btn-primary" id="exportBtn" onclick="exportData()">📥 Export</button>
+
+    <h3 style="font-size: 14px; margin: 24px 0 12px;">Previous Exports</h3>
+    <div id="exportsList"></div>
+  </div>
+</div>
+
+<script>
+  const JOB_ID = <%= job.id %>;
+  const JOB_DATA = <%- JSON.stringify(job) %>;
+
+  // Join Socket.IO room
+  socket.emit('join:job', JOB_ID);
+
+  // Tab switching
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.toggle('active', t.id === `tab-${tab}`));
+    if (tab === 'products') loadProducts();
+    if (tab === 'pages') loadPages();
+    if (tab === 'logs') loadLogs();
+    if (tab === 'export') loadExports();
+  }
+
+  // -- Products --
+  async function loadProducts(page = 1) {
+    const params = new URLSearchParams({ page, limit: 50 });
+    const search = document.getElementById('productSearch').value;
+    const minPrice = document.getElementById('productMinPrice').value;
+    const maxPrice = document.getElementById('productMaxPrice').value;
+    if (search) params.set('search', search);
+    if (minPrice) params.set('minPrice', minPrice);
+    if (maxPrice) params.set('maxPrice', maxPrice);
+
+    try {
+      const res = await fetch(`/api/jobs/${JOB_ID}/products?${params}`);
+      const data = await res.json();
+      renderProducts(data.products, data.page, data.totalPages, data.total);
+    } catch {}
+  }
+
+  function renderProducts(products, page, totalPages, total) {
+    const tbody = document.getElementById('productsTableBody');
+    if (!products.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No products found</div></td></tr>';
+      document.getElementById('productsPagination').innerHTML = '';
+      return;
+    }
+    tbody.innerHTML = products.map(p => {
+      const imgSrc = (p.images && p.images.length) ? p.images[0] : '';
+      return `<tr>
+        <td>${imgSrc ? `<img class="product-img" src="${escapeHtml(imgSrc)}" onerror="this.style.display='none'" alt="">` : '—'}</td>
+        <td><div class="truncate" title="${escapeHtml(p.name || '')}">${escapeHtml(p.name || 'Untitled')}</div></td>
+        <td>${p.price != null ? parseFloat(p.price).toFixed(2) : '—'}</td>
+        <td>${p.price_currency || p.priceCurrency || '—'}</td>
+        <td>${p.source_url || p.sourceUrl ? `<a href="${escapeHtml(p.source_url || p.sourceUrl)}" target="_blank" class="truncate" style="display:block; max-width:200px;">↗ Link</a>` : '—'}</td>
+      </tr>`;
+    }).join('');
+    renderPagination('productsPagination', page, totalPages, total, loadProducts);
+  }
+
+  // -- Pages --
+  async function loadPages(page = 1) {
+    try {
+      const res = await fetch(`/api/jobs/${JOB_ID}/pages?page=${page}&limit=50`);
+      const data = await res.json();
+      renderPages(data.pages, data.page, data.totalPages, data.total);
+    } catch {}
+  }
+
+  function renderPages(pages, page, totalPages, total) {
+    const tbody = document.getElementById('pagesTableBody');
+    if (!pages.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No pages crawled yet</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = pages.map(p => `
+      <tr>
+        <td><a href="${escapeHtml(p.url)}" target="_blank" class="truncate" style="display:block; max-width:400px;">${escapeHtml(p.url)}</a></td>
+        <td>${p.status_code || p.statusCode || '—'}</td>
+        <td>${(p.is_product_page || p.isProductPage) ? '<span class="badge badge-completed">Yes</span>' : 'No'}</td>
+        <td>${p.product_score || p.productScore || 0}</td>
+        <td>${p.depth}</td>
+      </tr>
+    `).join('');
+    renderPagination('pagesPagination', page, totalPages, total, loadPages);
+  }
+
+  // -- Logs --
+  async function loadLogs() {
+    const level = document.getElementById('logLevelFilter').value;
+    try {
+      const res = await fetch(`/api/jobs/${JOB_ID}/logs?level=${level}&limit=200`);
+      const data = await res.json();
+      renderLogs(data.logs);
+    } catch {}
+  }
+
+  function renderLogs(logs) {
+    const viewer = document.getElementById('logViewer');
+    if (!logs.length) {
+      viewer.innerHTML = '<div class="empty-state">No logs yet</div>';
+      return;
+    }
+    viewer.innerHTML = logs.map(l => {
+      const time = new Date(l.created_at || l.createdAt).toLocaleTimeString();
+      return `<div class="log-entry ${l.level}"><span class="log-time">${time}</span><span class="log-level">[${l.level.toUpperCase()}]</span> ${escapeHtml(l.message)}</div>`;
+    }).join('');
+    viewer.scrollTop = viewer.scrollHeight;
+  }
+
+  // -- Export --
+  async function exportData() {
+    const btn = document.getElementById('exportBtn');
+    btn.disabled = true;
+    btn.textContent = 'Exporting...';
+    try {
+      const res = await fetch(`/api/exports/${JOB_ID}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          format: document.getElementById('exportFormat').value,
+          search: document.getElementById('exportSearch').value,
+          minPrice: document.getElementById('exportMinPrice').value,
+          maxPrice: document.getElementById('exportMaxPrice').value,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Export created: ${data.filename}`);
+        loadExports();
+        // Auto-download
+        window.open(`/api/exports/download/${data.id}`, '_blank');
+      } else {
+        showToast(data.error || 'Export failed', 'error');
+      }
+    } catch {
+      showToast('Export failed', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '📥 Export';
+    }
+  }
+
+  async function loadExports() {
+    try {
+      const res = await fetch(`/api/exports/${JOB_ID}`);
+      const exports = await res.json();
+      const el = document.getElementById('exportsList');
+      if (!exports.length) {
+        el.innerHTML = '<div class="empty-state" style="padding: 16px;">No exports yet</div>';
+        return;
+      }
+      el.innerHTML = `<table><thead><tr><th>File</th><th>Format</th><th>Records</th><th>Size</th><th>Created</th><th></th></tr></thead><tbody>${
+        exports.map(e => `<tr>
+          <td>${escapeHtml(e.filename)}</td>
+          <td><span class="badge badge-${e.format === 'csv' ? 'api' : e.format === 'excel' ? 'dom' : 'headless'}">${e.format}</span></td>
+          <td>${e.record_count || e.recordCount}</td>
+          <td>${formatBytes(e.file_size || e.fileSize)}</td>
+          <td>${timeAgo(e.created_at || e.createdAt)}</td>
+          <td><a href="/api/exports/download/${e.id}" class="btn btn-sm">⬇ Download</a></td>
+        </tr>`).join('')
+      }</tbody></table>`;
+    } catch {}
+  }
+
+  // Pagination helper
+  function renderPagination(containerId, page, totalPages, total, loadFn) {
+    const el = document.getElementById(containerId);
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    let html = `<span class="pagination-info">${total} total</span>`;
+    if (page > 1) html += `<button class="btn btn-sm" onclick="(${loadFn.name})(${page - 1})">←</button>`;
+    for (let i = Math.max(1, page - 2); i <= Math.min(totalPages, page + 2); i++) {
+      html += `<button class="btn btn-sm ${i === page ? 'active' : ''}" onclick="(${loadFn.name})(${i})">${i}</button>`;
+    }
+    if (page < totalPages) html += `<button class="btn btn-sm" onclick="(${loadFn.name})(${page + 1})">→</button>`;
+    el.innerHTML = html;
+  }
+
+  // -- Job Actions --
+  async function cancelJob(id) {
+    if (!confirm('Cancel this job?')) return;
+    await fetch(`/api/jobs/${id}/cancel`, { method: 'POST' });
+    window.location.reload();
+  }
+
+  async function rerunJob(id) {
+    const res = await fetch(`/api/jobs/${id}/rerun`, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('New job created!');
+      window.location.href = `/jobs/${data.id}`;
+    }
+  }
+
+  async function deleteJob(id) {
+    if (!confirm('Delete this job and all its data? This cannot be undone.')) return;
+    await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+    window.location.href = '/';
+  }
+
+  // -- Real-time updates --
+  socket.on('job:status', (data) => {
+    const el = document.getElementById('jobStatus');
+    el.textContent = data.status;
+    el.className = `badge badge-${data.status}`;
+  });
+
+  socket.on('job:detected', (data) => {
+    const el = document.getElementById('jobSiteType');
+    if (el) { el.textContent = data.siteType; el.className = `badge badge-${data.siteType}`; }
+  });
+
+  socket.on('job:progress', (data) => {
+    document.getElementById('progressBar').style.width = data.progress + '%';
+    document.getElementById('progressLabel').textContent = `Progress: ${data.progress}%`;
+    document.getElementById('progressUrl').textContent = data.currentUrl || '';
+    if (data.stats) {
+      document.getElementById('statPages').textContent = data.stats.pagesCrawled || 0;
+      document.getElementById('statProducts').textContent = data.stats.productsFound || 0;
+      document.getElementById('statErrors').textContent = data.stats.errors || 0;
+    }
+  });
+
+  socket.on('job:product', (data) => {
+    // Refresh products table if on that tab
+    if (document.getElementById('tab-products').classList.contains('active')) {
+      loadProducts();
+    }
+  });
+
+  socket.on('job:log', (data) => {
+    const viewer = document.getElementById('logViewer');
+    const time = new Date(data.timestamp).toLocaleTimeString();
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${data.level}`;
+    entry.innerHTML = `<span class="log-time">${time}</span><span class="log-level">[${data.level.toUpperCase()}]</span> ${escapeHtml(data.message)}`;
+    viewer.appendChild(entry);
+    // Auto-scroll if near bottom
+    if (viewer.scrollTop + viewer.clientHeight >= viewer.scrollHeight - 60) {
+      viewer.scrollTop = viewer.scrollHeight;
+    }
+  });
+
+  socket.on('job:completed', (data) => {
+    document.getElementById('progressBar').style.width = '100%';
+    document.getElementById('progressBar').classList.add('completed');
+    document.getElementById('progressLabel').textContent = 'Progress: 100%';
+
+    // Update status badge
+    const statusEl = document.getElementById('jobStatus');
+    statusEl.textContent = 'completed';
+    statusEl.className = 'badge badge-completed';
+
+    // Stop the duration timer and freeze the final duration
+    JOB_DATA.completedAt = new Date().toISOString();
+    JOB_DATA.completed_at = JOB_DATA.completedAt;
+    if (durationInterval) { clearInterval(durationInterval); durationInterval = null; }
+    updateDuration();
+
+    showToast('Scraping completed!');
+    loadProducts();
+  });
+
+  socket.on('job:error', (data) => {
+    document.getElementById('progressBar').classList.add('failed');
+
+    const statusEl = document.getElementById('jobStatus');
+    statusEl.textContent = 'failed';
+    statusEl.className = 'badge badge-failed';
+
+    JOB_DATA.completedAt = new Date().toISOString();
+    JOB_DATA.completed_at = JOB_DATA.completedAt;
+    if (durationInterval) { clearInterval(durationInterval); durationInterval = null; }
+    updateDuration();
+
+    showToast(`Job failed: ${data.error}`, 'error');
+  });
+
+  // Duration updater
+  function updateDuration() {
+    const el = document.getElementById('statDuration');
+    if (JOB_DATA.startedAt || JOB_DATA.started_at) {
+      el.textContent = formatDuration(JOB_DATA.startedAt || JOB_DATA.started_at, JOB_DATA.completedAt || JOB_DATA.completed_at);
+    }
+  }
+  let durationInterval = setInterval(updateDuration, 1000);
+  updateDuration();
+
+  // Utilities
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  // Initial load
+  loadProducts();
+  loadLogs();
+</script>
