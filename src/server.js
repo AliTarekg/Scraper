@@ -40,11 +40,8 @@ app.use(express.urlencoded({ extended: true }));
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-// Static files — serve from next to .exe in production, from src/public in dev
-const publicDir = process.pkg
-  ? path.join(path.dirname(process.execPath), 'public')
-  : path.join(__dirname, 'public');
-app.use(express.static(publicDir));
+// Static files — served from snapshot in .exe, from src/public in dev
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Routes
 app.use('/api/jobs', require('./routes/jobs'));

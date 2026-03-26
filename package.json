@@ -3,18 +3,33 @@
   "version": "1.0.0",
   "description": "Web Scraping Dashboard Tool — detect, scrape, and manage product data from any website",
   "main": "src/server.js",
+  "bin": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "migrate": "node src/database/migrate.js",
     "seed": "node src/database/seed.js",
-    "build": "pkg . --targets node18-win-x64 --output dist/ScraperDashboard.exe"
+    "build": "pkg . --targets node20-win-x64 --output dist/ScraperDashboard.exe"
   },
   "pkg": {
     "assets": [
       "src/views/**/*",
       "src/public/**/*",
       ".env"
+    ],
+    "scripts": [
+      "node_modules/sequelize/lib/dialects/mysql/**/*.js",
+      "node_modules/axios/dist/node/axios.cjs",
+      "node_modules/cheerio/dist/commonjs/**/*.js"
+    ],
+    "ignore": [
+      "node_modules/sequelize/lib/dialects/sqlite/**",
+      "node_modules/sequelize/lib/dialects/postgres/**",
+      "node_modules/sequelize/lib/dialects/mssql/**",
+      "node_modules/sequelize/lib/dialects/mariadb/**",
+      "node_modules/sequelize/lib/dialects/snowflake/**",
+      "node_modules/sequelize/lib/dialects/db2/**",
+      "node_modules/sequelize/lib/dialects/ibmi/**"
     ],
     "outputPath": "dist"
   },
@@ -38,7 +53,7 @@
     "socket.io": "^4.7.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2",
-    "pkg": "^5.8.1"
+    "@yao-pkg/pkg": "^6.14.1",
+    "nodemon": "^3.0.2"
   }
 }
